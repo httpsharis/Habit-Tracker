@@ -44,7 +44,7 @@ def generate_synthetic_data(n_samples: int = 1000) -> pd.DataFrame:
     ) * (1 + np.random.normal(0, 0.08, n_samples))
     
     df['daily_performance_score'] = df['daily_performance_score'].clip(0, 100)
-    
+     
     return df
 
 

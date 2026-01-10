@@ -1,8 +1,10 @@
 """
 HabitOS Database Configuration.
 
-PostgreSQL database connection and session management using SQLAlchemy.
+SQLite database connection and session management using SQLAlchemy.
+For production, you can switch to PostgreSQL by changing DATABASE_URL.
 """
+import os
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, declarative_base
 
@@ -10,16 +12,18 @@ from sqlalchemy.orm import sessionmaker, declarative_base
 # DATABASE CONFIGURATION
 # ============================================================================
 
-# PostgreSQL connection URL
-# Format: postgresql://username:password@host:port/database
-DATABASE_URL = "postgresql://postgres:postgres@localhost:5432/habitos"
+# SQLite for local development (no installation needed)
+# The database file will be created in the backend folder
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+DATABASE_URL = f"sqlite:///{os.path.join(BASE_DIR, 'habitos.db')}"
+
+# For PostgreSQL production, uncomment and configure:
+# DATABASE_URL = "postgresql://postgres:postgres@localhost:5432/habitos"
 
 # Create SQLAlchemy engine
 engine = create_engine(
     DATABASE_URL,
-    pool_pre_ping=True,  # Verify connections before use
-    pool_size=5,         # Connection pool size
-    max_overflow=10      # Max additional connections
+    connect_args={"check_same_thread": False}  # Required for SQLite
 )
 
 # Create session factory

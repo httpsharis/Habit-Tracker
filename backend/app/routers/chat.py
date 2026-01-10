@@ -188,9 +188,9 @@ def get_prompt(step: int) -> str:
 
 def generate_recommendations(data: dict, history: Optional[dict] = None) -> list[str]:
     """
-    Generate strategic directives based on collected biometrics and history.
+    Generate actionable insights based on collected biometrics and history.
     
-    Uses both current session data and historical trends for personalized insights.
+    Focuses on practical, conversational advice rather than clinical alerts.
     """
     tips = []
     
@@ -201,53 +201,67 @@ def generate_recommendations(data: dict, history: Optional[dict] = None) -> list
     screen = data.get('screen_time', 0)
     hydration = data.get('hydration', 0)
     
-    # --- Sleep Analysis ---
-    if sleep < 6:
-        tips.append("⚠️ RECOVERY DEFICIT: Under 6 hours detected. Prioritize early bedtime tonight (-30min).")
+    # --- Sleep insights ---
+    if sleep < 5:
+        tips.append("You're running on fumes. Try to get to bed 30 minutes earlier tonight.")
+    elif sleep < 6:
+        tips.append("A bit short on sleep—consider a 20-minute power nap if you can.")
     elif sleep > 9:
-        tips.append("💤 HYPERSOMNIA: Over 9 hours may indicate fatigue or poor sleep quality. Evaluate consistency.")
+        tips.append("Sleeping over 9 hours can sometimes mean poor sleep quality. How do you feel?")
     
-    # --- Stress Analysis with History ---
+    # --- Stress insights ---
     if stress >= 8:
-        tips.append("🔴 CORTISOL OVERLOAD: High stress detected. Execute parasympathetic reset (Box Breathing x4, or 10min walk).")
+        tips.append("Stress is high today. A quick walk or some deep breaths can help reset.")
         if history and history.get('avg_stress', 0) >= 7:
-            tips.append("📊 PATTERN ALERT: Your stress has been elevated for multiple days. Consider identifying triggers.")
+            tips.append("You've been stressed for a few days now. Worth checking what's driving it.")
+    elif stress >= 6:
+        tips.append("Moderate stress detected. Take short breaks to stay sharp.")
     
-    # --- Work/Mood Burnout Vector ---
+    # --- Burnout warning ---
     if work >= 8 and mood < 5:
-        tips.append("⚡ BURNOUT VECTOR: High output + Low affect detected. Mandatory disconnect window recommended.")
+        tips.append("Pushing hard but feeling low? That's a sign to step back and recharge.")
     
-    # --- Mood Support ---
-    if mood < 5:
-        tips.append("🌅 MOOD OPTIMIZATION: Consider sunlight exposure, micro-wins, or movement to boost affect.")
+    # --- Mood support ---
+    if mood <= 3:
+        tips.append("Tough day? Even 10 minutes outside or a chat with someone can help.")
+    elif mood < 5:
+        tips.append("Mood's a bit low. Small wins and fresh air work wonders.")
         if history and history.get('avg_mood', 10) >= 7:
-            tips.append("📉 This is below your typical mood baseline. Something may be off today.")
+            tips.append("This is lower than your usual. Something on your mind?")
     
-    # --- Sleep + Work Warning ---
+    # --- Sleep + high workload ---
     if sleep < 7 and work >= 7:
-        tips.append("🔋 COGNITIVE BATTERY LOW: Sleep deficit + high output is unsustainable. Tonight's recovery is critical.")
+        tips.append("Low sleep plus high output isn't sustainable. Prioritize rest tonight.")
     
-    # --- Screen Time Analysis ---
+    # --- Screen time ---
     if screen > 10:
-        tips.append("📱 DIGITAL OVERLOAD: 10+ hours screen time. Schedule 20-20-20 breaks and blue light filters.")
+        tips.append("That's a lot of screen time. Give your eyes a break every 30 minutes.")
     elif screen > 6:
-        tips.append("👁️ Screen time elevated. Consider taking short breaks every 30 minutes.")
+        tips.append("Screen time is adding up. Try the 20-20-20 rule: every 20 min, look 20 feet away for 20 sec.")
     
-    # --- Hydration Analysis ---
-    if hydration < 4:
-        tips.append("💧 DEHYDRATION WARNING: Under 4 glasses. Aim for 8+ glasses daily for optimal function.")
+    # --- Hydration ---
+    if hydration < 3:
+        tips.append("You're quite dehydrated. Keep a water bottle nearby as a reminder.")
+    elif hydration < 5:
+        tips.append("Could use more water. Aim for 8 glasses throughout the day.")
     elif hydration >= 8:
-        tips.append("✅ Excellent hydration! Keep it up.")
+        tips.append("Great hydration today!")
     
-    # --- Historical Performance Insights ---
+    # --- Positive patterns from history ---
     if history and history.get('session_count', 0) >= 3:
         avg_score = history.get('avg_score', 50)
         if avg_score >= 75:
-            tips.append(f"🏆 STREAK: Your 7-day average is {avg_score}/100. You're performing above baseline!")
+            tips.append(f"You've been consistent lately—7-day average is {avg_score:.0f}/100. Keep it up!")
+        elif avg_score >= 60:
+            tips.append("Solid week so far. Small improvements add up.")
     
-    # Default positive message
+    # --- Positive reinforcement ---
+    if sleep >= 7 and stress <= 4 and mood >= 7:
+        tips.append("You're in a good spot today. Make the most of it!")
+    
+    # Default when everything looks fine
     if not tips:
-        tips.append("✅ STATUS: All systems nominal. Maintain current operating parameters.")
+        tips.append("Looking balanced today. Keep doing what you're doing.")
     
     return tips
 
@@ -343,19 +357,19 @@ def chat_with_ai(input_data: ChatInput, db: Session = Depends(get_db)):
     number_val = extract_number(message)
     
     # --- Intent Detection (only for non-numeric inputs) ---
-    intent = None
-    if number_val is None or len(message.split()) > 3:
-        try:
-            intent = model_intent.predict([message])[0]
-        except:
-            pass
+    # intent = None
+    # if number_val is None or len(message.split()) > 3:
+    #     try:
+    #         intent = model_intent.predict([message])[0]
+    #     except:
+    #         pass
 
-    if intent:
-        intent_map = {'greeting': 0, 'sleep': 1, 'work': 2, 'stress': 3, 'mood': 4}
-        if intent in intent_map:
-            mapped_step = intent_map[intent]
-            if mapped_step != step:
-                step = mapped_step
+    # if intent:
+    #     intent_map = {'greeting': 0, 'sleep': 1, 'work': 2, 'stress': 3, 'mood': 4}
+    #     if intent in intent_map:
+    #         mapped_step = intent_map[intent]
+    #         if mapped_step != step:
+    #             step = mapped_step
 
     # --- Handle "Go Back" Command ---
     if check_go_back(message) and step > 0:
@@ -382,19 +396,26 @@ def chat_with_ai(input_data: ChatInput, db: Session = Depends(get_db)):
     elif step == 1:
         if number_val is None:
             return ChatResponse(
-                bot_message="I need a numeric value. How many hours did you sleep?",
+                bot_message="How many hours did you sleep?",
                 next_step=1,
                 updated_data=data
             )
         if number_val < 0 or number_val > 24:
             return ChatResponse(
-                bot_message="Invalid range. Please enter hours between 0-24.",
+                bot_message="Please enter hours between 0-24.",
                 next_step=1,
                 updated_data=data
             )
         data['sleep_hours'] = number_val
-        bot_msg = f"{get_acknowledgment('sleep', number_val)}\n\n{get_prompt(2)}"
+        bot_msg = get_prompt(2)  # Just the next question
         next_step = 2
+        
+        return ChatResponse(
+            bot_message=bot_msg,
+            next_step=next_step,
+            updated_data=data,
+            acknowledgment=f"✓ {number_val} hours logged"  # Separate acknowledgment
+        )
 
     elif step == 2:
         if number_val is None:
@@ -466,21 +487,61 @@ def chat_with_ai(input_data: ChatInput, db: Session = Depends(get_db)):
         pred_class = model_classifier.predict(features)[0]
         pred_cluster = model_clusterer.predict(features)[0]
 
-        # Calculate final score with all 6 metrics
-        score_sleep = min(data.get('sleep_hours', 0), 9) / 9 * 25
-        score_work = data.get('work_intensity', 0) / 10 * 15
-        score_stress = (10 - data.get('stress_level', 0)) / 10 * 20
-        score_mood = data.get('mood_score', 0) / 10 * 20
-        score_screen = max(0, (12 - data.get('screen_time', 0))) / 12 * 10  # Less screen = better
-        score_hydration = min(data.get('hydration', 0), 8) / 8 * 10
+        # --- Calculate Score with Better Logic ---
+        
+        # Sleep: 7-9 hours is optimal (25 points max)
+        sleep = data.get('sleep_hours', 0)
+        if 7 <= sleep <= 9:
+            score_sleep = 25  # Perfect sleep
+        elif 6 <= sleep < 7 or 9 < sleep <= 10:
+            score_sleep = 20  # Good sleep
+        elif 5 <= sleep < 6:
+            score_sleep = 12  # Okay
+        else:
+            score_sleep = max(0, sleep / 9 * 15)  # Poor
+        
+        # Work: Moderate is best (not too lazy, not burnout) - 15 points max
+        work = data.get('work_intensity', 5)
+        if 4 <= work <= 7:
+            score_work = 15  # Balanced workday
+        elif 3 <= work < 4 or 7 < work <= 8:
+            score_work = 12
+        else:
+            score_work = 8  # Either too lazy or burning out
+        
+        # Stress: Lower is better - 20 points max
+        stress = data.get('stress_level', 5)
+        score_stress = max(0, (10 - stress) / 10 * 20)
+        
+        # Mood: Higher is better - 20 points max
+        mood = data.get('mood_score', 5)
+        score_mood = mood / 10 * 20
+        
+        # Screen time: Less is better, under 4 hours is great - 10 points max
+        screen = data.get('screen_time', 0)
+        if screen <= 3:
+            score_screen = 10
+        elif screen <= 6:
+            score_screen = 7
+        elif screen <= 10:
+            score_screen = 4
+        else:
+            score_screen = 1
+        
+        # Hydration: 8+ glasses is perfect - 10 points max
+        hydration = data.get('hydration', 0)
+        score_hydration = min(hydration, 8) / 8 * 10
         
         heuristic_score = score_sleep + score_work + score_stress + score_mood + score_screen + score_hydration
         
-        # Blend with ML prediction
+        # Use heuristic score primarily, ML as secondary influence
         if pred_score != 5.0:
-            final_score = (pred_score * 0.6) + (heuristic_score * 0.4)
+            # ML model has a real prediction - blend 30% ML, 70% heuristic
+            final_score = (pred_score * 0.3) + (heuristic_score * 0.7)
         else:
+            # ML model returned default - use pure heuristic
             final_score = heuristic_score
+        
         final_score = min(100, max(0, final_score))
 
         day_type = "🚀 Attack Mode" if pred_class == 1 else "🔋 Recovery Mode"
@@ -538,21 +599,11 @@ def chat_with_ai(input_data: ChatInput, db: Session = Depends(get_db)):
         bot_message=bot_msg,
         next_step=next_step,
         updated_data=data,
-        prediction=prediction
+        prediction=prediction,
+        acknowledgment=bot_msg  # Include acknowledgment in the response
     )
 
 
 def _get_welcome_message() -> str:
     """Generate the welcome/initialization message."""
-    return (
-        "**HabitOS Core** initialized.\n"
-        "Biometric analysis system ready.\n\n"
-        "I'll collect 6 metrics to generate your personalized performance forecast:\n"
-        "  1. Recovery (Sleep Duration)\n"
-        "  2. Strain (Work Intensity)\n"
-        "  3. Load (Stress Level)\n"
-        "  4. State (Mood Score)\n"
-        "  5. Digital (Screen Time)\n"
-        "  6. Hydration (Water Intake)\n\n"
-        f"{get_prompt(1)}"
-    )
+    return "Ready for your daily check-in. Let's start with sleep."

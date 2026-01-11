@@ -295,24 +295,37 @@ def generate_trend_analysis(data: dict, history: dict) -> str:
 
 def save_session_to_db(db: Session, user_id: int, data: dict, prediction: dict):
     """Save completed session to database."""
+    print(f"[SAVE] Attempting to save session for user_id={user_id}")
+    
+    # Convert numpy types to native Python types (critical for PostgreSQL)
+    def to_python(val):
+        """Convert numpy types to native Python types."""
+        if hasattr(val, 'item'):  # numpy scalar
+            return val.item()
+        return val
+    
     try:
         session = HabitSession(
             user_id=user_id,
-            sleep_hours=data.get('sleep_hours', 0),
-            work_intensity=data.get('work_intensity', 0),
-            stress_level=data.get('stress_level', 0),
-            mood_score=data.get('mood_score', 0),
-            screen_time=data.get('screen_time', 0),
-            hydration=data.get('hydration', 0),
-            daily_score=prediction.get('daily_score', 0),
+            sleep_hours=to_python(data.get('sleep_hours', 0)),
+            work_intensity=to_python(data.get('work_intensity', 0)),
+            stress_level=to_python(data.get('stress_level', 0)),
+            mood_score=to_python(data.get('mood_score', 0)),
+            screen_time=to_python(data.get('screen_time', 0)),
+            hydration=to_python(data.get('hydration', 0)),
+            daily_score=to_python(prediction.get('daily_score', 0)),
             day_classification=prediction.get('day_classification', 'Unknown'),
             persona=prediction.get('persona', 'Unknown')
         )
         db.add(session)
         db.commit()
+        db.refresh(session)
+        print(f"[SAVE] SUCCESS - Session saved with id={session.id}")
     except Exception as e:
         db.rollback()
-        print(f"Error saving session: {e}")
+        print(f"[SAVE] ERROR - Failed to save session: {e}")
+        import traceback
+        traceback.print_exc()
 
 
 # ============================================================================

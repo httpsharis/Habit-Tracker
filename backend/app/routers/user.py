@@ -113,93 +113,95 @@ def calculate_trend(recent_avg: Optional[float], overall_avg: float) -> str:
 @router.get("/user/{user_id}/stats", response_model=UserStatsResponse)
 def get_user_stats(user_id: int, db: Session = Depends(get_db)):
     """
-    Get user's statistics and trends.
+    Get user's statistics and trends using optimized SQL aggregation.
     
-    Calculates averages for all metrics and compares recent (7 days)
-    to overall performance to identify trends.
+    Efficiently calculates overall and recent (7-day) averages directly in the DB.
     """
-    # Verify user exists
-    user = db.query(User).filter(User.id == user_id).first()
-    if not user:
+    # Verify user exists (lightweight query)
+    if not db.query(User.id).filter(User.id == user_id).scalar():
         raise HTTPException(status_code=404, detail="User not found")
     
-    # Get all sessions
-    sessions = db.query(HabitSession)\
-        .filter(HabitSession.user_id == user_id).all()
+    # 1. Calculate OVERALL averages
+    overall_stats = db.query(
+        func.count(HabitSession.id).label("total"),
+        func.avg(HabitSession.sleep_hours).label("avg_sleep"),
+        func.avg(HabitSession.work_intensity).label("avg_work"),
+        func.avg(HabitSession.stress_level).label("avg_stress"),
+        func.avg(HabitSession.mood_score).label("avg_mood"),
+        func.avg(HabitSession.screen_time).label("avg_screen"),
+        func.avg(HabitSession.hydration).label("avg_hydration"),
+        func.avg(HabitSession.daily_score).label("avg_score")
+    ).filter(HabitSession.user_id == user_id).first()
     
-    if not sessions:
+    if not overall_stats.total:
         return UserStatsResponse(
-            user_id=user_id,
-            total_sessions=0,
+            user_id=user_id, total_sessions=0,
             avg_sleep=0, avg_work_intensity=0, avg_stress=0,
             avg_mood=0, avg_screen_time=0, avg_hydration=0,
             avg_daily_score=0
         )
     
-    # Calculate overall averages
-    total = len(sessions)
-    avg_sleep = sum(s.sleep_hours for s in sessions) / total
-    avg_work = sum(s.work_intensity for s in sessions) / total
-    avg_stress = sum(s.stress_level for s in sessions) / total
-    avg_mood = sum(s.mood_score for s in sessions) / total
-    avg_screen = sum(s.screen_time or 0 for s in sessions) / total
-    avg_hydration = sum(s.hydration or 0 for s in sessions) / total
-    avg_score = sum(s.daily_score for s in sessions) / total
-    
-    # Calculate recent averages (last 7 days)
+    # 2. Calculate RECENT averages (last 7 days)
     seven_days_ago = datetime.utcnow() - timedelta(days=7)
-    recent_sessions = [s for s in sessions if s.created_at >= seven_days_ago]
+    recent_stats = db.query(
+        func.avg(HabitSession.sleep_hours).label("avg_sleep"),
+        func.avg(HabitSession.work_intensity).label("avg_work"),
+        func.avg(HabitSession.stress_level).label("avg_stress"),
+        func.avg(HabitSession.mood_score).label("avg_mood"),
+        func.avg(HabitSession.screen_time).label("avg_screen"),
+        func.avg(HabitSession.hydration).label("avg_hydration"),
+        func.avg(HabitSession.daily_score).label("avg_score")
+    ).filter(
+        HabitSession.user_id == user_id,
+        HabitSession.created_at >= seven_days_ago
+    ).first()
     
-    recent_avg_sleep = None
-    recent_avg_work = None
-    recent_avg_stress = None
-    recent_avg_mood = None
-    recent_avg_screen = None
-    recent_avg_hydration = None
-    recent_avg_score = None
+    # Helper to clean nullable floats
+    def val(v): return round(v, 2) if v is not None else 0.0
+    def r_val(v): return round(v, 2) if v is not None else None  # Recent can be None
+
+    # 3. Calculate Trends
+    # Handle case where recent_stats contains None values (if no recent data)
+    r_sleep = recent_stats.avg_sleep if recent_stats and recent_stats.avg_sleep is not None else 0
+    r_stress = recent_stats.avg_stress if recent_stats and recent_stats.avg_stress is not None else 0
+    r_mood = recent_stats.avg_mood if recent_stats and recent_stats.avg_mood is not None else 0
+    r_score = recent_stats.avg_score if recent_stats and recent_stats.avg_score is not None else 0
     
-    if recent_sessions:
-        r_total = len(recent_sessions)
-        recent_avg_sleep = sum(s.sleep_hours for s in recent_sessions) / r_total
-        recent_avg_work = sum(s.work_intensity for s in recent_sessions) / r_total
-        recent_avg_stress = sum(s.stress_level for s in recent_sessions) / r_total
-        recent_avg_mood = sum(s.mood_score for s in recent_sessions) / r_total
-        recent_avg_screen = sum(s.screen_time or 0 for s in recent_sessions) / r_total
-        recent_avg_hydration = sum(s.hydration or 0 for s in recent_sessions) / r_total
-        recent_avg_score = sum(s.daily_score for s in recent_sessions) / r_total
+    # Helper for trend formatting
+    def format_recent(val):
+        return round(val, 2) if val is not None else None
+
+    # Sleep Trend
+    sleep_trend = calculate_trend(r_sleep, overall_stats.avg_sleep or 0)
     
-    # Calculate trends
-    # For stress, lower is better, so invert the trend
-    sleep_trend = calculate_trend(recent_avg_sleep, avg_sleep)
-    stress_trend_raw = calculate_trend(recent_avg_stress, avg_stress)
-    # Invert stress trend (lower stress = improving)
-    if stress_trend_raw == "↑ improving":
-        stress_trend = "↓ increasing"
-    elif stress_trend_raw == "↓ declining":
-        stress_trend = "↑ decreasing"
-    else:
-        stress_trend = "↔ stable"
+    # Stress Trend (inverted logic)
+    stress_raw = calculate_trend(r_stress, overall_stats.avg_stress or 0)
+    if stress_raw == "↑ improving": stress_trend = "↓ increasing"
+    elif stress_raw == "↓ declining": stress_trend = "↑ decreasing"
+    else: stress_trend = "↔ stable"
     
-    mood_trend = calculate_trend(recent_avg_mood, avg_mood)
-    score_trend = calculate_trend(recent_avg_score, avg_score)
+    mood_trend = calculate_trend(r_mood, overall_stats.avg_mood or 0)
+    score_trend = calculate_trend(r_score, overall_stats.avg_score or 0)
     
     return UserStatsResponse(
         user_id=user_id,
-        total_sessions=total,
-        avg_sleep=round(avg_sleep, 2),
-        avg_work_intensity=round(avg_work, 2),
-        avg_stress=round(avg_stress, 2),
-        avg_mood=round(avg_mood, 2),
-        avg_screen_time=round(avg_screen, 2),
-        avg_hydration=round(avg_hydration, 2),
-        avg_daily_score=round(avg_score, 2),
-        recent_avg_sleep=round(recent_avg_sleep, 2) if recent_avg_sleep else None,
-        recent_avg_work_intensity=round(recent_avg_work, 2) if recent_avg_work else None,
-        recent_avg_stress=round(recent_avg_stress, 2) if recent_avg_stress else None,
-        recent_avg_mood=round(recent_avg_mood, 2) if recent_avg_mood else None,
-        recent_avg_screen_time=round(recent_avg_screen, 2) if recent_avg_screen else None,
-        recent_avg_hydration=round(recent_avg_hydration, 2) if recent_avg_hydration else None,
-        recent_avg_daily_score=round(recent_avg_score, 2) if recent_avg_score else None,
+        total_sessions=overall_stats.total,
+        avg_sleep=val(overall_stats.avg_sleep),
+        avg_work_intensity=val(overall_stats.avg_work),
+        avg_stress=val(overall_stats.avg_stress),
+        avg_mood=val(overall_stats.avg_mood),
+        avg_screen_time=val(overall_stats.avg_screen),
+        avg_hydration=val(overall_stats.avg_hydration),
+        avg_daily_score=val(overall_stats.avg_score),
+        
+        recent_avg_sleep=format_recent(recent_stats.avg_sleep) if recent_stats else None,
+        recent_avg_work_intensity=format_recent(recent_stats.avg_work) if recent_stats else None,
+        recent_avg_stress=format_recent(recent_stats.avg_stress) if recent_stats else None,
+        recent_avg_mood=format_recent(recent_stats.avg_mood) if recent_stats else None,
+        recent_avg_screen_time=format_recent(recent_stats.avg_screen) if recent_stats else None,
+        recent_avg_hydration=format_recent(recent_stats.avg_hydration) if recent_stats else None,
+        recent_avg_daily_score=format_recent(recent_stats.avg_score) if recent_stats else None,
+        
         sleep_trend=sleep_trend,
         stress_trend=stress_trend,
         mood_trend=mood_trend,

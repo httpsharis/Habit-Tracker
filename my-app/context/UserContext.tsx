@@ -61,7 +61,8 @@ interface UserContextType {
 
 const UserContext = createContext<UserContextType | undefined>(undefined);
 
-const API_BASE = "http://localhost:8000/api";
+// Use environment variable for API URL
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api";
 
 // ============================================================================
 // PROVIDER
@@ -76,14 +77,31 @@ export function UserProvider({ children }: { children: ReactNode }) {
 
     // Check for existing session on mount
     useEffect(() => {
-        const savedUser = localStorage.getItem('habitos_user');
-        if (savedUser) {
-            const parsed = JSON.parse(savedUser);
-            setUser(parsed);
-            // Fetch fresh stats
-            fetchStats(parsed.id);
-            fetchSessions(parsed.id);
-        }
+        const validateAndLoadUser = async () => {
+            const savedUser = localStorage.getItem('habitos_user');
+            if (savedUser) {
+                const parsed = JSON.parse(savedUser);
+                
+                // Verify user still exists in database
+                try {
+                    const res = await fetch(`${API_BASE}/user/${parsed.id}`);
+                    if (res.ok) {
+                        setUser(parsed);
+                        fetchStats(parsed.id);
+                        fetchSessions(parsed.id);
+                    } else {
+                        // User doesn't exist in DB anymore - clear local storage
+                        console.warn("User not found in database, clearing session");
+                        localStorage.removeItem('habitos_user');
+                        setUser(null);
+                    }
+                } catch (err) {
+                    console.warn("Could not validate user:", err);
+                }
+            }
+        };
+        
+        validateAndLoadUser();
     }, []);
 
     // Fetch user stats

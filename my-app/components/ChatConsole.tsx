@@ -130,6 +130,8 @@ function Toast({ message, onClose }: { message: string; onClose: () => void }) {
 // MAIN COMPONENT
 // ============================================================================
 
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api";
+
 export default function ChatConsole() {
   const { user, refreshSessions, refreshStats } = useUser();
   
@@ -159,7 +161,7 @@ export default function ChatConsole() {
     setPrediction(null);
 
     try {
-      const res = await fetch("http://localhost:8000/api/talk", {
+      const res = await fetch(`${API_BASE}/talk`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

@@ -4,5 +4,6 @@
   ],
   "python.autoComplete.extraPaths": [
     "${workspaceFolder}/backend"
-  ]
+  ],
+  "postman.settings.dotenv-detection-notification-visibility": false
 }
